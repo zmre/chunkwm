@@ -487,6 +487,16 @@ node *GetLowestCommonAncestor(node *A, node *B)
     return NULL;
 }
 
+bool PseudoNodeSwallowsWindow(node *Node, macos_window *Window)
+{
+    bool Result = ((Node) &&
+                   (Node->WindowId == Node_PseudoLeaf) &&
+                   (Node->Swallow) &&
+                   (StringEquals(Node->Swallow->Owner, Window->Owner->Name)) &&
+                   (StringEquals(Node->Swallow->Name, Window->Name)));
+    return Result;
+}
+
 equalize_node EqualizeNodeTree(node *Tree)
 {
     if (IsLeafNode(Tree)) {
@@ -559,6 +569,8 @@ struct serialized_node
 {
     int TypeId;
     char *Type;
+    char *Owner;
+    char *Name;
     char *Split;
     float Ratio;
     serialized_node *Next;
@@ -580,13 +592,19 @@ ChainSerializedNode(serialized_node *Root, const char *NodeType, node *Node)
 }
 
 internal serialized_node *
-ChainSerializedNode(serialized_node *Root, const char *NodeType)
+ChainSerializedNode(serialized_node *Root, const char *NodeType, uint32_t WindowId)
 {
     serialized_node *SerializedNode = (serialized_node *) malloc(sizeof(serialized_node));
     memset(SerializedNode, 0, sizeof(serialized_node));
 
+    printf ("serialized_node for windowid: %d\n", WindowId);
+    macos_window *Window = GetWindowByID(WindowId);
+    ASSERT(Window);
+
     SerializedNode->TypeId = Node_Serialized_Leaf;
     SerializedNode->Type = strdup(NodeType);
+    SerializedNode->Owner = strdup(Window->Owner->Name);
+    SerializedNode->Name = strdup(Window->Name);
 
     Root->Next = SerializedNode;
     return SerializedNode;
@@ -609,11 +627,11 @@ SerializeRootNode(node *Node, const char *NodeType, serialized_node *SerializedN
     SerializedNode = ChainSerializedNode(SerializedNode, NodeType, Node);
 
     SerializedNode = IsLeafNode(Node->Left)
-                   ? ChainSerializedNode(SerializedNode, "left_leaf")
+                   ? ChainSerializedNode(SerializedNode, "left_leaf", Node->Left->WindowId)
                    : SerializeRootNode(Node->Left, "left_root", SerializedNode);
 
     SerializedNode = IsLeafNode(Node->Right)
-                   ? ChainSerializedNode(SerializedNode, "right_leaf")
+                   ? ChainSerializedNode(SerializedNode, "right_leaf", Node->Right->WindowId)
                    : SerializeRootNode(Node->Right, "right_root", SerializedNode);
 
     return SerializedNode;
@@ -648,7 +666,7 @@ char *SerializeNodeToBuffer(node *Node)
         } else if (Current->TypeId == Node_Serialized_Leaf) {
             ASSERT(Cursor < EndOfBuffer);
             BytesWritten = snprintf(Cursor, BufferSize,
-                                    "%s\n", Current->Type);
+                                    "%s %zu %s %zu %s\n", Current->Type, strlen(Current->Owner), Current->Owner, strlen(Current->Name), Current->Name);
             ASSERT(BytesWritten >= 0);
             Cursor += BytesWritten;
             BufferSize -= BytesWritten;
@@ -676,7 +694,7 @@ node *DeserializeNodeFromBuffer(char *Buffer)
     char *SplitString = TokenToString(Split);
     token Ratio = GetToken(&Cursor);
 
-    Tree->WindowId = Node_PseudoLeaf;
+    Tree->WindowId = 0;
     Tree->Split = NodeSplitFromString(SplitString);
     free(SplitString);
     Tree->Ratio = TokenToFloat(Ratio);
@@ -691,7 +709,7 @@ node *DeserializeNodeFromBuffer(char *Buffer)
             char *SplitString = TokenToString(Split);
             token Ratio = GetToken(&Cursor);
 
-            Left->WindowId = Node_PseudoLeaf;
+            Left->WindowId = 0;
             Left->Parent = Current;
             Left->Split = NodeSplitFromString(SplitString);
             free(SplitString);
@@ -707,7 +725,7 @@ node *DeserializeNodeFromBuffer(char *Buffer)
             char *SplitString = TokenToString(Split);
             token Ratio = GetToken(&Cursor);
 
-            Right->WindowId = Node_PseudoLeaf;
+            Right->WindowId = 0;
             Right->Parent = Current;
             Right->Split = NodeSplitFromString(SplitString);
             free(SplitString);
@@ -719,6 +737,26 @@ node *DeserializeNodeFromBuffer(char *Buffer)
             node *Leaf = (node *) malloc(sizeof(node));
             memset(Leaf, 0, sizeof(node));
 
+            token OwnerLength = GetToken(&Cursor);
+            unsigned Length = TokenToInt(OwnerLength);
+            token Owner = { Cursor, Length };
+            char *OwnerString = TokenToString(Owner);
+            Cursor += Length + 1;
+
+            token NameLength = GetToken(&Cursor);
+            Length = TokenToInt(NameLength);
+            token Name = { Cursor, Length };
+            char *NameString = TokenToString(Name);
+            Cursor += Length + 1;
+
+            printf("deserialized owner: %s\n", OwnerString);
+            printf("deserialized name: %s\n", NameString);
+
+            swallow_criteria *Swallow = (swallow_criteria *) malloc(sizeof(swallow_criteria));
+            Swallow->Owner = OwnerString;
+            Swallow->Name = NameString;
+
+            Leaf->Swallow = Swallow;
             Leaf->WindowId = Node_PseudoLeaf;
             Leaf->Parent = Current;
             Leaf->Ratio = CVarFloatingPointValue(CVAR_BSP_SPLIT_RATIO);
@@ -727,6 +765,26 @@ node *DeserializeNodeFromBuffer(char *Buffer)
             node *Leaf = (node *) malloc(sizeof(node));
             memset(Leaf, 0, sizeof(node));
 
+            token OwnerLength = GetToken(&Cursor);
+            unsigned Length = TokenToInt(OwnerLength);
+            token Owner = { Cursor, Length };
+            char *OwnerString = TokenToString(Owner);
+            Cursor += Length + 1;
+
+            token NameLength = GetToken(&Cursor);
+            Length = TokenToInt(NameLength);
+            token Name = { Cursor, Length };
+            char *NameString = TokenToString(Name);
+            Cursor += Length + 1;
+
+            printf("deserialized owner: %s\n", OwnerString);
+            printf("deserialized name: %s\n", NameString);
+
+            swallow_criteria *Swallow = (swallow_criteria *) malloc(sizeof(swallow_criteria));
+            Swallow->Owner = OwnerString;
+            Swallow->Name = NameString;
+
+            Leaf->Swallow = Swallow;
             Leaf->WindowId = Node_PseudoLeaf;
             Leaf->Parent = Current;
             Leaf->Ratio = CVarFloatingPointValue(CVAR_BSP_SPLIT_RATIO);

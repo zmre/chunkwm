@@ -51,6 +51,12 @@ struct preselect_node
     presel_window *Border;
 };
 
+struct swallow_criteria
+{
+    char *Owner;
+    char *Name;
+};
+
 struct node
 {
     uint32_t WindowId;
@@ -63,6 +69,8 @@ struct node
 
     node *Zoom;
     region Region;
+
+    swallow_criteria *Swallow;
 };
 
 struct equalize_node
@@ -113,6 +121,7 @@ node *GetBiggestLeafNode(node *Tree);
 node *GetFirstMinDepthLeafNode(node *Root);
 node *GetFirstMinDepthPseudoLeafNode(node *Root);
 node *GetLowestCommonAncestor(node *A, node *B);
+bool PseudoNodeSwallowsWindow(node *Node, macos_window *Window);
 
 node *GetNextLeafNode(node *Node);
 node *GetPrevLeafNode(node *Node);

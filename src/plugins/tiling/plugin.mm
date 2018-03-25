@@ -389,22 +389,17 @@ void TileWindowOnSpace(macos_window *Window, macos_space *Space, virtual_space *
                 ApplyNodeRegion(VirtualSpace->Preselect->Node, VirtualSpace->Mode);
                 FreePreselectNode(VirtualSpace);
             } else {
-                Node = GetFirstMinDepthPseudoLeafNode(VirtualSpace->Tree);
+                Node = GetFirstLeafNode(VirtualSpace->Tree);
                 if (Node) {
-                    if (Node->Parent) {
-                        int SpawnLeft = CVarIntegerValue(CVAR_BSP_SPAWN_LEFT);
-                        node_ids NodeIds = AssignNodeIds(Node->Parent->WindowId, Window->Id, SpawnLeft);
-                        Node->Parent->WindowId = Node_Root;
-                        Node->Parent->Left->WindowId = NodeIds.Left;
-                        Node->Parent->Right->WindowId = NodeIds.Right;
-                        CreateNodeRegionRecursive(Node->Parent, false, Space, VirtualSpace);
-                        ApplyNodeRegion(Node->Parent, VirtualSpace->Mode);
-                    } else {
-                        Node->WindowId = Window->Id;
-                        CreateNodeRegion(Node, Region_Full, Space, VirtualSpace);
-                        ApplyNodeRegion(Node, VirtualSpace->Mode);
-                    }
-                    goto display_free;
+                    do {
+                        if (PseudoNodeSwallowsWindow(Node, Window)) {
+                            Node->WindowId = Window->Id;
+                            ApplyNodeRegion(Node->Parent, VirtualSpace->Mode);
+                            goto display_free;
+                        } else if (Node) {
+                            Node = GetNextLeafNode(Node);
+                        }
+                    } while(Node);
                 }
 
                 if (InsertionPoint) {
@@ -824,36 +819,34 @@ CreateDeserializedWindowTreeForSpaceWithWindows(macos_space *Space, virtual_spac
     }
 
     node *Root = VirtualSpace->Tree;
+    node *Node = GetFirstLeafNode(Root);
     for (size_t Index = 0; Index < Windows.size(); ++Index) {
-        node *Node = GetFirstMinDepthPseudoLeafNode(Root);
-        if (Node) {
-            if (Node->Parent) {
-                // NOTE(koekeishiya): This is an intermediate leaf node in the tree.
-                // We simulate the process of performing a new split, but use the
-                // existing node configuration.
-                int SpawnLeft = CVarIntegerValue(CVAR_BSP_SPAWN_LEFT);
-                node_ids NodeIds = AssignNodeIds(Node->Parent->WindowId, Windows[Index], SpawnLeft);
-                Node->Parent->WindowId = Node_Root;
-                Node->Parent->Left->WindowId = NodeIds.Left;
-                Node->Parent->Right->WindowId = NodeIds.Right;
-            } else {
-                // NOTE(koekeishiya): This is the root node, we temporarily
-                // use it as a leaf node, even though it really isn't.
-                Node->WindowId = Windows[Index];
+        macos_window *Window = GetWindowByID(Windows[Index]);
+        do {
+            if (PseudoNodeSwallowsWindow(Node, Window)) {
+                Node->WindowId = Window->Id;
+                break;
+            } else if (Node) {
+                Node = GetNextLeafNode(Node);
             }
-        } else {
-            // NOTE(koekeishiya): There are more windows than containers in the layout
-            // We perform a regular split with node creation.
-            Node = GetFirstMinDepthLeafNode(Root);
-            ASSERT(Node != NULL);
+        } while(Node);
+        Node = GetFirstLeafNode(Root);
+    }
 
-            node_split Split = NodeSplitFromString(CVarStringValue(CVAR_BSP_SPLIT_MODE));
-            if (Split == Split_Optimal) {
-                Split = OptimalSplitMode(Node);
-            }
+    // NOTE(koekeishiya): There might be more windows than containers in the layout, do regular split with node creation.
+    for (size_t Index = 0; Index < Windows.size(); ++Index) {
+        node *WindowNode = GetNodeWithId(VirtualSpace->Tree, Windows[Index], VirtualSpace->Mode);
+        if (WindowNode) continue;
 
-            CreateLeafNodePair(Node, Node->WindowId, Windows[Index], Split, Space, VirtualSpace);
+        Node = GetFirstMinDepthLeafNode(Root);
+        ASSERT(Node != NULL);
+
+        node_split Split = NodeSplitFromString(CVarStringValue(CVAR_BSP_SPLIT_MODE));
+        if (Split == Split_Optimal) {
+            Split = OptimalSplitMode(Node);
         }
+
+        CreateLeafNodePair(Node, Node->WindowId, Windows[Index], Split, Space, VirtualSpace);
     }
 
     CreateNodeRegion(VirtualSpace->Tree, Region_Full, Space, VirtualSpace);
