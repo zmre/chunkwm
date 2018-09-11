@@ -507,6 +507,60 @@ End:
     return Success;
 }
 
+command_func ScratchpadCommandDispatch(char Flag)
+{
+    switch (Flag) {
+    case 'f': return FocusMonitor; break;
+
+    // NOTE(koekeishiya): silence compiler warning.
+    default: return 0; break;
+    }
+}
+
+inline bool
+ParseScratchpadCommand(const char *Message, command *Chain)
+{
+    int Count;
+    char **Args = BuildArguments(Message, &Count);
+
+    int Option;
+    bool Success = true;
+    const char *Short = "f:";
+
+    command *Command = Chain;
+    while ((Option = getopt_long(Count, Args, Short, NULL, NULL)) != -1) {
+        switch (Option) {
+        case 'f': {
+            unsigned Unsigned;
+            if ((StringEquals(optarg, "prev")) ||
+                (StringEquals(optarg, "next")) ||
+                (sscanf(optarg, "%d", &Unsigned) == 1)) {
+                command *Entry = ConstructCommand(Option, optarg);
+                Command->Next = Entry;
+                Command = Entry;
+            } else {
+                c_log(C_LOG_LEVEL_WARN, "    invalid selector '%s' for monitor flag '%c'\n", optarg, Option);
+                Success = false;
+                FreeCommandChain(Chain);
+                goto End;
+            }
+        } break;
+        case '?': {
+            Success = false;
+            FreeCommandChain(Chain);
+            goto End;
+        } break;
+        }
+    }
+
+End:
+    // NOTE(koekeishiya): Reset getopt.
+    optind = 1;
+
+    FreeArguments(Count, Args);
+    return Success;
+}
+
 query_func QueryCommandDispatch(char Flag)
 {
     switch (Flag) {
@@ -779,6 +833,18 @@ void CommandCallback(int SockFD, const char *Type, const char *Message)
             while ((Command = Command->Next)) {
                 c_log(C_LOG_LEVEL_DEBUG, "    command: '%c', arg: '%s'\n", Command->Flag, Command->Arg);
                 (*MonitorCommandDispatch(Command->Flag))(Command->Arg);
+            }
+
+            FreeCommandChain(&Chain);
+        }
+    } else if (StringEquals(Type, "scratchpad")) {
+        command Chain = {};
+        bool Success = ParseScratchpadCommand(Message, &Chain);
+        if (Success) {
+            command *Command = &Chain;
+            while ((Command = Command->Next)) {
+                c_log(C_LOG_LEVEL_DEBUG, "    command: '%c', arg: '%s'\n", Command->Flag, Command->Arg);
+                (*ScratchpadCommandDispatch(Command->Flag))(Command->Arg);
             }
 
             FreeCommandChain(&Chain);
