@@ -1,10 +1,24 @@
 ### HEAD -  not yet released
 
+----------
+
+### version 0.3.17
+
+#### other changes
+
+ - properly detect size of Dock when calculating desktop offset (#607)
+
+----------
+
+### version 0.3.16
+
 #### other changes
 
  - fixed crash upon querying the monocle-index in a monocle desktop with only floating windows (#497)
 
  - fixed an issue that caused minimized and hidden applications to be misplaced upon restoration (#560)
+
+ - new command to move a desktop with all its current windows and layouts to a different monitor (#583)
 
 ----------
 
